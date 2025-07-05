@@ -96,6 +96,7 @@ def simulate_power(p_A, uplift, threshold, desired_power, simulations, samples, 
     return powers
 
 # --- Run Simulation ---
+np.random.seed(42)
 results = simulate_power(p_A, uplift, thresh, desired_power, simulations, samples, alpha_prior, beta_prior)
 sample_sizes, power_values = zip(*results)
 
