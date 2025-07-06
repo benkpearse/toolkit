@@ -69,7 +69,7 @@ def simulate_power(p_A, uplift, threshold, desired_power, simulations, samples, 
     n = 1000
     powers = []
 
-    while n <= 500000:
+    while n <= 5000000:
         power_hits = 0
 
         for _ in range(simulations):
