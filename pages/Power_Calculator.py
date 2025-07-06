@@ -6,13 +6,13 @@ import matplotlib.pyplot as plt
 # --- Sidebar Inputs ---
 st.sidebar.header("Test Parameters")
 p_A = st.sidebar.number_input(
-    "Baseline conversion rate (p_A)", min_value=0.01, max_value=0.99, value=0.05, step=0.001,
-    format="%.3f",
+    "Baseline conversion rate (p_A)", min_value=0.0001, max_value=0.999, value=0.05, step=0.001,
+    format="%.4f",
     help="Conversion rate for your control variant (A), e.g., 5% = 0.050"
 )
 uplift = st.sidebar.number_input(
-    "Expected uplift (e.g., 0.10 = +10%)", min_value=0.0, max_value=0.99, value=0.10, step=0.01,
-    format="%.3f",
+    "Expected uplift (e.g., 0.10 = +10%)", min_value=0.0001, max_value=0.999, value=0.10, step=0.01,
+    format="%.4f",
     help="Relative improvement expected in variant B over A"
 )
 thresh = st.sidebar.slider(
