@@ -18,6 +18,7 @@ Use this to interpret results after an A/B test has run.
   - Estimated uplift
   - Credible interval
   - Graphs of posterior distributions
+  - Sample Ratio Mismatch check - Please input User not Session data to identify SRM
 
 🧠 **Use when:** Your test is complete and you want to evaluate results with a Bayesian lens.
 
