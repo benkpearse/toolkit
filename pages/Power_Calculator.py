@@ -20,7 +20,7 @@ thresh = st.sidebar.slider(
     help="Confidence level to declare a winner — usually 0.95 or 0.99"
 )
 desired_power = st.sidebar.slider(
-    "Desired power", 0.5, 0.99, 0.8, step=0.01,
+    "Desired probability", 0.5, 0.99, 0.8, step=0.01,
     help="Minimum acceptable probability of detecting a real uplift"
 )
 simulations = st.sidebar.slider(
@@ -101,7 +101,7 @@ results = simulate_power(p_A, uplift, thresh, desired_power, simulations, sample
 sample_sizes, power_values = zip(*results)
 
 # --- Output ---
-st.title("Bayesian A/B Test Power Calculator")
+st.title("Bayesian A/B Sample Size Calculator")
 
 st.markdown("""
 This app estimates the **minimum sample size per group** required to detect a given uplift in conversion rate using a Bayesian framework.
