@@ -20,14 +20,16 @@ Use this to interpret results after an A/B test has run.
   - Graphs of posterior distributions
   - Sample Ratio Mismatch check - Please input User not Session data to identify SRM
 
-🧠 **Use when:** Your test is complete and you want to evaluate results with a Bayesian lens.
+🧠 **Use when:** 
+- During testing to evaluate results.
+- Your test is complete and you want to evaluate results with a Bayesian lens.
 
 ---
 
-### 2. ⚙️ Power Calculator
+### 2. ⚙️ Sample Size Calculator
 Estimate the minimum **sample size per variant** needed to detect an uplift with a certain confidence.
 
-- **Input:** Baseline rate, expected uplift, power target, confidence threshold, optional priors
+- **Input:** Baseline rate, expected uplift, probability target, confidence threshold, optional priors
 - **Output:** Minimum sample size or power achieved for given n
 
 🧠 **Use when:**
