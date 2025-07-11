@@ -5,15 +5,17 @@ import matplotlib.pyplot as plt
 
 # --- Sidebar Inputs ---
 st.sidebar.header("Test Parameters")
+
+mode = st.sidebar.radio(
+    "Planning Mode",
+    ["Estimate Sample Size", "Estimate MDE (Minimum Detectable Effect)"],
+    help="Choose whether to estimate required sample size for a given uplift, or the minimum uplift detectable for a fixed sample size."
+)
+
 p_A = st.sidebar.number_input(
     "Baseline conversion rate (p_A)", min_value=0.0001, max_value=0.999, value=0.05, step=0.001,
     format="%.4f",
     help="Conversion rate for your control variant (A), e.g., 5% = 0.050"
-)
-uplift = st.sidebar.number_input(
-    "Expected uplift (e.g., 0.10 = +10%)", min_value=0.0001, max_value=0.999, value=0.10, step=0.01,
-    format="%.4f",
-    help="Relative improvement expected in variant B over A"
 )
 thresh = st.sidebar.slider(
     "Posterior threshold (e.g., 0.95)", 0.5, 0.99, 0.95, step=0.01,
@@ -24,13 +26,25 @@ desired_power = st.sidebar.slider(
     help="Minimum acceptable power of detecting a real uplift"
 )
 simulations = st.sidebar.slider(
-    "Simulations per n", 100, 2000, 300, step=100,
-    help="Number of test simulations to run per sample size"
+    "Simulations", 100, 2000, 300, step=100,
+    help="How many test simulations to run"
 )
 samples = st.sidebar.slider(
     "Posterior samples", 500, 3000, 1000, step=100,
-    help="Number of samples drawn from each posterior distribution test"
+    help="How many samples to draw from each posterior distribution"
 )
+
+if mode == "Estimate Sample Size":
+    uplift = st.sidebar.number_input(
+        "Expected uplift (e.g., 0.10 = +10%)", min_value=0.0001, max_value=0.999, value=0.10, step=0.01,
+        format="%.4f",
+        help="Relative improvement expected in variant B over A"
+    )
+else:
+    fixed_n = st.sidebar.number_input(
+        "Fixed sample size per variant", min_value=100, value=10000, step=100,
+        help="Fixed sample size used to determine the minimum detectable uplift."
+    )
 
 # --- Optional Priors ---
 st.sidebar.markdown("---")
@@ -56,20 +70,20 @@ if use_auto_prior:
 else:
     alpha_prior = st.sidebar.number_input(
         "Alpha (prior successes)", min_value=0.0, value=1.0, step=0.1,
-        help="Represents prior belief in success count before the test. Higher values add more weight to your prior knowledge."
+        help="Prior belief in successes before the test."
     )
     beta_prior = st.sidebar.number_input(
         "Beta (prior failures)", min_value=0.0, value=1.0, step=0.1,
-        help="Represents prior belief in failure count before the test. Adjust this if you have historical data."
+        help="Prior belief in failures before the test."
     )
 
-# --- Memory-efficient Simulation Function ---
+# --- Simulate Functions ---
 def simulate_power(p_A, uplift, threshold, desired_power, simulations, samples, alpha_prior, beta_prior):
     p_B = p_A * (1 + uplift)
     n = 1000
     powers = []
 
-    while n <= 5000000:
+    while n <= 500000:
         power_hits = 0
 
         for _ in range(simulations):
@@ -95,72 +109,145 @@ def simulate_power(p_A, uplift, threshold, desired_power, simulations, samples, 
 
     return powers
 
+def simulate_mde(p_A, threshold, desired_power, simulations, samples, alpha_prior, beta_prior, fixed_n):
+    uplift = 0.001
+    powers = []
+
+    while uplift < 2.0:
+        p_B = p_A * (1 + uplift)
+        power_hits = 0
+
+        for _ in range(simulations):
+            conv_A = np.random.binomial(fixed_n, p_A)
+            conv_B = np.random.binomial(fixed_n, p_B)
+
+            post_A = beta(alpha_prior + conv_A, beta_prior + fixed_n - conv_A)
+            post_B = beta(alpha_prior + conv_B, beta_prior + fixed_n - conv_B)
+
+            samples_A = post_A.rvs(samples)
+            samples_B = post_B.rvs(samples)
+
+            prob_B_superior = np.mean(samples_B > samples_A)
+            if prob_B_superior > threshold:
+                power_hits += 1
+
+        power = power_hits / simulations
+        powers.append((uplift, power))
+
+        if power >= desired_power:
+            break
+        uplift += 0.01
+
+    return powers
+
 # --- Run Simulation ---
-np.random.seed(42)
-results = simulate_power(p_A, uplift, thresh, desired_power, simulations, samples, alpha_prior, beta_prior)
-sample_sizes, power_values = zip(*results)
+st.title("Bayesian A/B Pre Test Calculator")
 
-# --- Output ---
-st.title("Bayesian A/B Sample Size Calculator")
+if mode == "Estimate Sample Size":
+    results = simulate_power(p_A, uplift, thresh, desired_power, simulations, samples, alpha_prior, beta_prior)
+    x_vals, y_vals = zip(*results)
 
-st.markdown("""
-This app estimates the **minimum sample size per group** required to detect a given uplift in conversion rate using a Bayesian framework.
-You can adjust the assumptions in the sidebar.
+    st.subheader("📈 Sample Size Estimation")
+    st.write(f"**Baseline Conversion Rate:** {p_A:.2%}")
+    st.write(f"**Expected Uplift:** {uplift:.2%}")
+    st.write(f"**Posterior Threshold:** {thresh:.2f}")
+    st.write(f"**Target Power:** {desired_power:.0%}")
+    st.write(f"**Priors Used:** Alpha = {alpha_prior:.1f}, Beta = {beta_prior:.1f}")
 
----
-**ℹ️ About Priors:**
-Priors represent your prior beliefs about the conversion rate before running the test. 
-- A Beta prior is defined by two parameters: `alpha` (prior successes) and `beta` (prior failures).
-- If you have no strong prior belief, use `alpha = 1`, `beta = 1` — this is called a uniform prior.
-- If you have historical data, you can encode it here to improve inference efficiency.
-- Now you can optionally auto-calculate these priors using a historical conversion rate and sample size.
-""")
+    if y_vals[-1] >= desired_power:
+        st.success(f"✅ Estimated minimum sample size per group: {x_vals[-1]}")
+    else:
+        st.warning("Test did not reach desired power within simulation limits.")
 
-st.write(f"**Baseline Conversion Rate:** {p_A:.2%}")
-st.write(f"**Expected Uplift:** {uplift:.2%}")
-st.write(f"**Posterior Threshold:** {thresh:.2f}")
-st.write(f"**Target Power:** {desired_power:.0%}")
-st.write(f"**Priors Used:** Alpha = {alpha_prior:.1f}, Beta = {beta_prior:.1f}")
-
-if power_values[-1] >= desired_power:
-    st.success(f"✅ Estimated minimum sample size per group: {sample_sizes[-1]}")
+    st.markdown("""
+    ### 📊 What This Means
+    This chart shows how sample size impacts your ability to detect the expected uplift.
+    The red line shows your required power (e.g. 80%). Where the curve crosses this line is the recommended sample size.
+    """)
 else:
-    st.warning("Test did not reach desired power within simulation limits.")
+    results = simulate_mde(p_A, thresh, desired_power, simulations, samples, alpha_prior, beta_prior, fixed_n)
+    x_vals, y_vals = zip(*results)
+
+    st.subheader("📉 Minimum Detectable Effect (MDE)")
+    st.write(f"**Baseline Conversion Rate:** {p_A:.2%}")
+    st.write(f"**Sample Size per Group:** {fixed_n:,}")
+    st.write(f"**Posterior Threshold:** {thresh:.2f}")
+    st.write(f"**Target Power:** {desired_power:.0%}")
+    st.write(f"**Priors Used:** Alpha = {alpha_prior:.1f}, Beta = {beta_prior:.1f}")
+
+    if y_vals[-1] >= desired_power:
+        st.success(f"✅ Minimum detectable uplift: {x_vals[-1]:.2%}")
+    else:
+        st.warning("Simulation did not reach target power. Try increasing sample size or simulations.")
+
+    st.markdown("""
+    ### 📊 What This Means
+    This chart shows how much uplift your test can reliably detect given your fixed sample size.
+    The red line shows your required power (e.g. 80%). Where the curve crosses this line is your minimum detectable effect.
+    """)
 
 # --- Plotting ---
 plt.figure(figsize=(8, 4))
-plt.plot(sample_sizes, power_values, marker='o')
+plt.plot(x_vals, y_vals, marker='o')
 plt.axhline(desired_power, color='red', linestyle='--', label='Target Power')
-plt.xlabel("Sample Size per Group")
+if mode == "Estimate Sample Size":
+    plt.xlabel("Sample Size per Group")
+else:
+    plt.xlabel("Relative Uplift (MDE)")
 plt.ylabel("Estimated Power")
-plt.title("Power Curve")
+plt.title("Power vs. " + ("Sample Size" if mode == "Estimate Sample Size" else "MDE"))
 plt.grid(True)
 plt.legend()
 st.pyplot(plt)
 
-st.markdown("---")
-
-# --- Power Explanation ---
+# --- Conceptual Explanation ---
 st.markdown("""
 <details>
-<summary><strong>📊 What Does “Power” Mean in Bayesian Testing?</strong></summary>
+<summary><strong>ℹ️ What is Minimum Detectable Effect (MDE)?</strong></summary>
 
-In Bayesian testing, we don’t use p-values or null hypotheses like in frequentist stats.
+**Minimum Detectable Effect (MDE)** tells you the smallest improvement (uplift) your test is likely to detect with a given amount of data.
 
-But we still care about the same core question:
+If your true uplift is smaller than the MDE, you probably won’t detect it — not because it's not real, but because your test isn't sensitive enough.
 
-> **If there really is an uplift, how likely is my test to detect it confidently?**
+Use MDE to set realistic expectations: if your MDE is 5%, don’t expect to reliably detect a 2% improvement.
 
-That’s what we mean by **Bayesian power** — the probability that your test will correctly conclude:
-`P(B > A) > threshold` 
-when B actually is better than A.
+</details>
 
-This is estimated using **simulations**:
-- Assume a true uplift (e.g., B converts 10% better than A)
-- Simulate many tests with that uplift
-- Count how often your decision rule (e.g., `P(B > A) > 0.95`) is triggered
+<details>
+<summary><strong>ℹ️ What Does Power Mean in Bayesian A/B Testing?</strong></summary>
 
-While Bayesian testing doesn’t define “power” mathematically like frequentist tests do, this simulation-based approach gives you a very similar interpretation — and helps you plan better.
+Bayesian power answers this question:
+
+> **If the improvement is real, how often will my test be confident enough to detect it?**
+
+We define “confident enough” as your posterior probability threshold (e.g., P(B > A) > 0.95).
+
+So if you expect a 10% uplift and run 300 tests with that uplift, power is the percent of those that correctly conclude B is better than A.
+
+This helps you decide how much data is needed before starting a real test.
+
+</details>
+
+<details>
+<summary><strong>ℹ️ About Priors in Bayesian A/B Testing</strong></summary>
+
+Priors represent your prior beliefs about the conversion rate before running the test.
+
+A **Beta prior** is defined by two parameters:
+- **Alpha** = prior successes
+- **Beta** = prior failures
+
+If you have **no strong prior belief**, use `alpha = 1`, `beta = 1` — this is called a uniform (or uninformative) prior.
+
+If you **have historical data**, you can encode it using:
+- Prior conversion rate (e.g., 0.05)
+- Prior sample size (e.g., 1000)
+
+These get translated into alpha and beta by:
+- `alpha = conversion rate × sample size`
+- `beta = (1 - conversion rate) × sample size`
+
+Over time, you can build better priors by accumulating test outcomes in similar contexts (e.g., same site, funnel, device). This makes your tests more data-efficient.
 
 </details>
 """, unsafe_allow_html=True)
