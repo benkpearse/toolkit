@@ -20,7 +20,7 @@ thresh = st.sidebar.slider(
     help="Confidence level to declare a winner — usually 0.95 or 0.99"
 )
 desired_power = st.sidebar.slider(
-    "Desired probability", 0.5, 0.99, 0.8, step=0.01,
+    "Desired power", 0.5, 0.99, 0.8, step=0.01,
     help="Minimum acceptable probability of detecting a real uplift"
 )
 simulations = st.sidebar.slider(
