@@ -152,9 +152,7 @@ But we still care about the same core question:
 > **If there really is an uplift, how likely is my test to detect it confidently?**
 
 That’s what we mean by **Bayesian power** — the probability that your test will correctly conclude:
-\[
-P(B > A) > \text{threshold}
-\]
+`P(B > A) > threshold` 
 when B actually is better than A.
 
 This is estimated using **simulations**:
