@@ -139,3 +139,30 @@ plt.legend()
 st.pyplot(plt)
 
 st.markdown("---")
+
+# --- Power Explanation ---
+st.markdown("""
+<details>
+<summary><strong>📊 What Does “Power” Mean in Bayesian Testing?</strong></summary>
+
+In Bayesian testing, we don’t use p-values or null hypotheses like in frequentist stats.
+
+But we still care about the same core question:
+
+> **If there really is an uplift, how likely is my test to detect it confidently?**
+
+That’s what we mean by **Bayesian power** — the probability that your test will correctly conclude:
+\[
+P(B > A) > \text{threshold}
+\]
+when B actually is better than A.
+
+This is estimated using **simulations**:
+- Assume a true uplift (e.g., B converts 10% better than A)
+- Simulate many tests with that uplift
+- Count how often your decision rule (e.g., `P(B > A) > 0.95`) is triggered
+
+While Bayesian testing doesn’t define “power” mathematically like frequentist tests do, this simulation-based approach gives you a very similar interpretation — and helps you plan better.
+
+</details>
+""", unsafe_allow_html=True)
