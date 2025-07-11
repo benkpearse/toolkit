@@ -21,7 +21,7 @@ thresh = st.sidebar.slider(
 )
 desired_power = st.sidebar.slider(
     "Desired power", 0.5, 0.99, 0.8, step=0.01,
-    help="Minimum acceptable probability of detecting a real uplift"
+    help="Minimum acceptable power of detecting a real uplift"
 )
 simulations = st.sidebar.slider(
     "Simulations per n", 100, 2000, 300, step=100,
