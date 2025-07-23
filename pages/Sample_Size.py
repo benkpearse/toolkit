@@ -3,6 +3,94 @@ import numpy as np
 from scipy.stats import beta
 import matplotlib.pyplot as plt
 
+# --- Core Simulation Functions ---
+
+def run_simulation(n, p_A, p_B, simulations, samples, alpha_prior, beta_prior, thresh):
+    """
+    Runs a single set of simulations for a given sample size and conversion rates.
+    Returns the calculated power.
+    """
+    n_A = n
+    n_B = n
+    
+    # Create a single random number generator for reproducibility
+    rng = np.random.default_rng(seed=42)
+
+    # Use the generator for all random operations in this function
+    conversions_A = rng.binomial(n_A, p_A, size=simulations)
+    conversions_B = rng.binomial(n_B, p_B, size=simulations)
+
+    alpha_post_A = alpha_prior + conversions_A
+    beta_post_A = beta_prior + n_A - conversions_A
+    alpha_post_B = alpha_prior + conversions_B
+    beta_post_B = beta_prior + n_B - conversions_B
+
+    # Pass the same generator to ensure independent, reproducible sampling
+    post_samples_A = beta.rvs(alpha_post_A, beta_post_A, size=(samples, simulations), random_state=rng)
+    post_samples_B = beta.rvs(alpha_post_B, beta_post_B, size=(samples, simulations), random_state=rng)
+
+    prob_B_better = np.mean(post_samples_B > post_samples_A, axis=0)
+
+    power = np.mean(prob_B_better > thresh)
+    return power
+
+@st.cache_data
+def simulate_power(p_A, uplift, thresh, desired_power, simulations, samples, alpha_prior, beta_prior):
+    """
+    Simulates power across a range of sample sizes to find the minimum
+    sample size required to achieve the desired power.
+    This version now dynamically searches for the sample size up to a generous limit.
+    """
+    p_B = p_A * (1 + uplift)
+    if p_B > 1.0:
+        st.error(f"Error: Uplift of {uplift:.2%} on baseline {p_A:.2%} results in a conversion rate > 100%. Please lower the uplift or baseline.")
+        return []
+
+    results = []
+    n = 100  # Start with a small sample size
+    power = 0
+    MAX_SAMPLE_SIZE = 5_000_000  # Safety break to prevent extremely long runs
+
+    with st.spinner("Searching for required sample size... This may take a moment."):
+        while power < desired_power and n < MAX_SAMPLE_SIZE:
+            power = run_simulation(n, p_A, p_B, simulations, samples, alpha_prior, beta_prior, thresh)
+            results.append((n, power))
+            
+            if power >= desired_power:
+                break
+
+            # Increase sample size: smaller steps at first, bigger steps later for efficiency
+            if n < 1000:
+                n += 100
+            elif n < 20000:
+                n = int(n * 1.5)
+            else:
+                n = int(n * 1.25)
+            
+    return results
+
+@st.cache_data
+def simulate_mde(p_A, thresh, desired_power, simulations, samples, alpha_prior, beta_prior, fixed_n):
+    """
+    Simulates power across a range of uplifts (MDEs) for a fixed sample size
+    to find the minimum detectable effect.
+    """
+    results = []
+    # Test a reasonable, fixed range of uplifts up to 50%
+    uplifts = np.linspace(0.01, 0.50, 20)
+
+    with st.spinner("Running simulations for MDE..."):
+        for uplift in uplifts:
+            p_B = p_A * (1 + uplift)
+            if p_B > 1.0:
+                continue
+            power = run_simulation(fixed_n, p_A, p_B, simulations, samples, alpha_prior, beta_prior, thresh)
+            results.append((uplift, power))
+            if power >= desired_power:
+                break
+    return results
+
+
 # --- Sidebar Inputs ---
 st.sidebar.header("Test Parameters")
 
@@ -77,177 +165,150 @@ else:
         help="Prior belief in failures before the test."
     )
 
-# --- Simulate Functions ---
-def simulate_power(p_A, uplift, threshold, desired_power, simulations, samples, alpha_prior, beta_prior):
-    p_B = p_A * (1 + uplift)
-    n = 1000
-    powers = []
+# --- App Body ---
+st.title("Bayesian A/B Pre-Test Calculator")
 
-    while n <= 500000:
-        power_hits = 0
+results_available = False
+if st.button("Run Calculation"):
 
-        for _ in range(simulations):
-            conv_A = np.random.binomial(n, p_A)
-            conv_B = np.random.binomial(n, p_B)
+    if mode == "Estimate Sample Size":
+        results = simulate_power(p_A, uplift, thresh, desired_power, simulations, samples, alpha_prior, beta_prior)
+        if results:
+            x_vals, y_vals = zip(*results)
+            results_available = True
 
-            post_A = beta(alpha_prior + conv_A, beta_prior + n - conv_A)
-            post_B = beta(alpha_prior + conv_B, beta_prior + n - conv_B)
+            st.subheader("📈 Sample Size Estimation")
+            st.write(f"**Baseline Conversion Rate:** {p_A:.2%}")
+            st.write(f"**Expected Uplift:** {uplift:.2%}")
+            st.write(f"**Posterior Threshold:** {thresh:.2f}")
+            st.write(f"**Target Power:** {desired_power:.0%}")
+            st.write(f"**Priors Used:** Alpha = {alpha_prior:.1f}, Beta = {beta_prior:.1f}")
 
-            samples_A = post_A.rvs(samples)
-            samples_B = post_B.rvs(samples)
+            if y_vals[-1] >= desired_power:
+                st.success(
+                    f"✅ Estimated minimum sample size per group: **{x_vals[-1]:,}** "
+                    f"(achieved {y_vals[-1]:.1%} power)."
+                )
+            else:
+                st.warning("Could not reach desired power. The uplift may be too small or the power target too high for a practical test.")
 
-            prob_B_superior = np.mean(samples_B > samples_A)
-            if prob_B_superior > threshold:
-                power_hits += 1
+            st.markdown("""
+            ### 📊 What This Means
+            This chart shows how sample size impacts your ability to detect the expected uplift.
+            The red line shows your required power. Where the curve crosses this line is the recommended sample size.
+            """)
+    else: # Estimate MDE Mode
+        results = simulate_mde(p_A, thresh, desired_power, simulations, samples, alpha_prior, beta_prior, fixed_n)
+        if results:
+            x_vals, y_vals = zip(*results)
+            results_available = True
 
-        power = power_hits / simulations
-        powers.append((n, power))
+            st.subheader("📉 Minimum Detectable Effect (MDE)")
+            st.write(f"**Baseline Conversion Rate:** {p_A:.2%}")
+            st.write(f"**Sample Size per Group:** {fixed_n:,}")
+            st.write(f"**Posterior Threshold:** {thresh:.2f}")
+            st.write(f"**Target Power:** {desired_power:.0%}")
+            st.write(f"**Priors Used:** Alpha = {alpha_prior:.1f}, Beta = {beta_prior:.1f}")
 
-        if power >= desired_power:
-            break
-        n += 5000
+            if y_vals[-1] >= desired_power:
+                st.success(
+                    f"✅ Minimum detectable relative uplift: **{x_vals[-1]:.2%}** "
+                    f"(achieved {y_vals[-1]:.1%} power)."
+                )
+            else:
+                st.warning("Simulation could not reach target power with the given sample size.")
 
-    return powers
+            st.markdown("""
+            ### 📊 What This Means
+            This chart shows how much uplift your test can reliably detect given your fixed sample size.
+            The red line shows your required power. Where the curve crosses this line is your minimum detectable effect.
+            """)
 
-def simulate_mde(p_A, threshold, desired_power, simulations, samples, alpha_prior, beta_prior, fixed_n):
-    uplift = 0.001
-    powers = []
+    if results_available:
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(x_vals, y_vals, marker='o', label='Estimated Power')
+        ax.axhline(desired_power, color='red', linestyle='--', label='Target Power')
+        if mode == "Estimate Sample Size":
+            ax.set_xlabel("Sample Size per Group")
+            if len(x_vals) > 1: # Only set log scale if there's a range to show
+                ax.set_xscale('log')
+            ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f"{int(x):,}"))
+        else:
+            ax.set_xlabel("Relative Uplift (MDE)")
+            ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f"{x:.1%}"))
+        ax.set_ylabel("Estimated Power")
+        ax.set_title("Power vs. " + ("Sample Size" if mode == "Estimate Sample Size" else "MDE"))
+        ax.grid(True, which="both", ls="--", c='0.7')
+        ax.legend()
+        st.pyplot(fig)
 
-    while uplift < 2.0:
-        p_B = p_A * (1 + uplift)
-        power_hits = 0
+# --- Time-Based Planning ---
+st.markdown("---")
+st.header("⏱️ Time-Based Planning")
+st.markdown("Use this section to translate your sample size requirements into a real-world timeline.")
 
-        for _ in range(simulations):
-            conv_A = np.random.binomial(fixed_n, p_A)
-            conv_B = np.random.binomial(fixed_n, p_B)
+weekly_traffic = st.number_input(
+    "Estimated total weekly traffic to the experiment",
+    min_value=1,
+    value=20000,
+    step=100,
+    help="Enter the total number of users you expect to enter the experiment each week (before the 50/50 split)."
+)
 
-            post_A = beta(alpha_prior + conv_A, beta_prior + fixed_n - conv_A)
-            post_B = beta(alpha_prior + conv_B, beta_prior + fixed_n - conv_B)
+if results_available:
+    st.subheader("🗓️ Duration Estimate")
+    users_per_week_per_variant = weekly_traffic / 2
 
-            samples_A = post_A.rvs(samples)
-            samples_B = post_B.rvs(samples)
-
-            prob_B_superior = np.mean(samples_B > samples_A)
-            if prob_B_superior > threshold:
-                power_hits += 1
-
-        power = power_hits / simulations
-        powers.append((uplift, power))
-
-        if power >= desired_power:
-            break
-        uplift += 0.01
-
-    return powers
-
-# --- Run Simulation ---
-st.title("Bayesian A/B Pre Test Calculator")
-
-if mode == "Estimate Sample Size":
-    results = simulate_power(p_A, uplift, thresh, desired_power, simulations, samples, alpha_prior, beta_prior)
-    x_vals, y_vals = zip(*results)
-
-    st.subheader("📈 Sample Size Estimation")
-    st.write(f"**Baseline Conversion Rate:** {p_A:.2%}")
-    st.write(f"**Expected Uplift:** {uplift:.2%}")
-    st.write(f"**Posterior Threshold:** {thresh:.2f}")
-    st.write(f"**Target Power:** {desired_power:.0%}")
-    st.write(f"**Priors Used:** Alpha = {alpha_prior:.1f}, Beta = {beta_prior:.1f}")
-
-    if y_vals[-1] >= desired_power:
-        st.success(f"✅ Estimated minimum sample size per group: {x_vals[-1]}")
-    else:
-        st.warning("Test did not reach desired power within simulation limits.")
-
-    st.markdown("""
-    ### 📊 What This Means
-    This chart shows how sample size impacts your ability to detect the expected uplift.
-    The red line shows your required power (e.g. 80%). Where the curve crosses this line is the recommended sample size.
-    """)
-else:
-    results = simulate_mde(p_A, thresh, desired_power, simulations, samples, alpha_prior, beta_prior, fixed_n)
-    x_vals, y_vals = zip(*results)
-
-    st.subheader("📉 Minimum Detectable Effect (MDE)")
-    st.write(f"**Baseline Conversion Rate:** {p_A:.2%}")
-    st.write(f"**Sample Size per Group:** {fixed_n:,}")
-    st.write(f"**Posterior Threshold:** {thresh:.2f}")
-    st.write(f"**Target Power:** {desired_power:.0%}")
-    st.write(f"**Priors Used:** Alpha = {alpha_prior:.1f}, Beta = {beta_prior:.1f}")
-
-    if y_vals[-1] >= desired_power:
-        st.success(f"✅ Minimum detectable uplift: {x_vals[-1]:.2%}")
-    else:
-        st.warning("Simulation did not reach target power. Try increasing sample size or simulations.")
-
-    st.markdown("""
-    ### 📊 What This Means
-    This chart shows how much uplift your test can reliably detect given your fixed sample size.
-    The red line shows your required power (e.g. 80%). Where the curve crosses this line is your minimum detectable effect.
-    """)
-
-# --- Plotting ---
-plt.figure(figsize=(8, 4))
-plt.plot(x_vals, y_vals, marker='o')
-plt.axhline(desired_power, color='red', linestyle='--', label='Target Power')
-if mode == "Estimate Sample Size":
-    plt.xlabel("Sample Size per Group")
-else:
-    plt.xlabel("Relative Uplift (MDE)")
-plt.ylabel("Estimated Power")
-plt.title("Power vs. " + ("Sample Size" if mode == "Estimate Sample Size" else "MDE"))
-plt.grid(True)
-plt.legend()
-st.pyplot(plt)
+    if users_per_week_per_variant > 0:
+        if mode == "Estimate Sample Size":
+            if 'y_vals' in locals() and y_vals[-1] >= desired_power:
+                required_sample_size = x_vals[-1]
+                estimated_weeks = required_sample_size / users_per_week_per_variant
+                st.info(f"To reach the required **{required_sample_size:,} users per variant**, you'll need to run this test for approximately **{estimated_weeks:.1f} weeks**.")
+            else:
+                st.warning("Cannot estimate duration because the target power was not reached.")
+        else: # MDE Mode
+            required_sample_size = fixed_n
+            estimated_weeks = required_sample_size / users_per_week_per_variant
+            st.info(f"To reach your fixed sample size of **{required_sample_size:,} users per variant**, it will take approximately **{estimated_weeks:.1f} weeks**.")
 
 # --- Conceptual Explanation ---
-st.markdown("""
-<details>
-<summary><strong>ℹ️ What is Minimum Detectable Effect (MDE)?</strong></summary>
+st.markdown("---")
+with st.expander("ℹ️ Learn about the concepts used in this calculator"):
+    st.markdown("""
+    #### What is Sample Size? 👥
+    **Sample size** is the number of users in each group of your test. Think of it like the lens on a camera you're using to see which variant is better. A bigger sample size gives you a bigger, more powerful lens.
 
-**Minimum Detectable Effect (MDE)** tells you the smallest improvement (uplift) your test is likely to detect with a given amount of data.
+    This bigger lens makes your test more sensitive in two key ways:
 
-If your true uplift is smaller than the MDE, you probably won’t detect it — not because it's not real, but because your test isn't sensitive enough.
+    1.  **You can spot smaller improvements (Lower MDE 🔎)**
+        A powerful camera lens (**more users**) can spot a tiny, faint star that a weaker lens would miss. Similarly, a larger sample size allows you to reliably detect a very **small uplift (a lower MDE)**.
 
-Use MDE to set realistic expectations: if your MDE is 5%, don’t expect to reliably detect a 2% improvement.
+    2.  **You're more certain about what you see (Higher Power 💪)**
+        When you're trying to photograph a specific star, a bigger lens (**more users**) gives you a much better chance (**higher power**) of capturing a sharp, undeniable photo instead of a blurry, inconclusive smudge.
 
-</details>
+    The goal is to find the right balance—a lens big enough to be confident in the result, but not so big that you waste time and resources.
 
-<details>
-<summary><strong>ℹ️ What Does Power Mean in Bayesian A/B Testing?</strong></summary>
+    ---
+    #### What is Minimum Detectable Effect (MDE)? 🔎
+    The **Minimum Detectable Effect (MDE)** is the smallest improvement your test can reliably detect at a given power level.
 
-Bayesian power answers this question:
+    Think of it as the sensitivity of your experiment. If the true uplift from your change is smaller than the MDE, your test will likely miss it. This doesn't mean the uplift isn't real, just that your experiment isn't powerful enough to see it. Use the MDE to set realistic expectations for what your test can achieve with your available traffic.
 
-> **If the improvement is real, how often will my test be confident enough to detect it?**
+    ---
+    #### What is Bayesian Power? 💪
+    **Power** answers one critical question: *"If my variant is truly better by a specific amount, what's the probability my test will actually detect it?"*
 
-We define “confident enough” as your posterior probability threshold (e.g., P(B > A) > 0.95).
+    For example, 80% power means you have an 80% chance of getting a conclusive result (e.g., P(B > A) > 95%) if the real improvement matches what you expected. Running a test with low power is like trying to read in a dim room—you're likely to miss things and end up with an inconclusive result, wasting valuable traffic.
 
-So if you expect a 10% uplift and run 300 tests with that uplift, power is the percent of those that correctly conclude B is better than A.
+    ---
+    #### What are Priors? 🧠
+    **Priors** represent what you believe about the conversion rate *before* the test begins. In this model, your belief is captured by two numbers:
+    - **Alpha ($$\\alpha$$)**: The number of prior "successes".
+    - **Beta ($$\\beta$$)**: The number of prior "failures".
 
-This helps you decide how much data is needed before starting a real test.
+    * **No strong belief?** Use an **uninformative prior** like `alpha = 1` and `beta = 1`. This treats all possible conversion rates as equally likely to start.
+    * **Have historical data?** Create an **informative prior**. If past data showed 50 conversions from 1,000 users, you'd set `alpha = 50` and `beta = 950`.
 
-</details>
-
-<details>
-<summary><strong>ℹ️ About Priors in Bayesian A/B Testing</strong></summary>
-
-Priors represent your prior beliefs about the conversion rate before running the test.
-
-A **Beta prior** is defined by two parameters:
-- **Alpha** = prior successes
-- **Beta** = prior failures
-
-If you have **no strong prior belief**, use `alpha = 1`, `beta = 1` — this is called a uniform (or uninformative) prior.
-
-If you **have historical data**, you can encode it using:
-- Prior conversion rate (e.g., 0.05)
-- Prior sample size (e.g., 1000)
-
-These get translated into alpha and beta by:
-- `alpha = conversion rate × sample size`
-- `beta = (1 - conversion rate) × sample size`
-
-Over time, you can build better priors by accumulating test outcomes in similar contexts (e.g., same site, funnel, device). This makes your tests more data-efficient.
-
-</details>
-""", unsafe_allow_html=True)
+    As your test collects new data, the evidence from the experiment will quickly outweigh the initial prior belief.
+    """)
