@@ -3,66 +3,124 @@ import numpy as np
 from scipy.stats import beta
 import matplotlib.pyplot as plt
 
-# Set seed for reproducibility
-rng = np.random.default_rng(42)
+# 1. Set Page Configuration
+st.set_page_config(
+    page_title="False Positive Simulator | Bayesian Toolkit",
+    layout="centered",
+    initial_sidebar_state="expanded"
+)
 
-# --- Sidebar Inputs ---
-st.sidebar.header("Test Parameters")
-p_A = st.sidebar.number_input("Baseline conversion rate (p_A)", min_value=0.001, max_value=0.99, value=0.05, step=0.001, format="%.3f", help="Conversion rate for your control variant (A), e.g., 5% means 0.05")
-thresh = st.sidebar.slider("Posterior threshold (e.g., 0.95)", 0.5, 0.99, 0.95, step=0.01,
-                           help="Confidence level to declare a winner — usually 0.95 or 0.99")
-simulations = st.sidebar.slider("Simulations", 100, 20000, 500, step=100,
-                                help="How many full A/B simulations to run — more is slower but more accurate")
-samples = st.sidebar.slider("Posterior samples", 1000, 100000, 3500, step=500,
-                            help="Number of random samples from the posterior Beta distributions")
-n = st.sidebar.number_input("Sample size per variant", min_value=100, value=35000, step=100,
-                            help="Number of users (or sessions) tested in each variant arm")
-
-# --- Simulation Function for False Positive ---
+# --- Core Simulation Function (Vectorized for Speed) ---
+@st.cache_data
 def simulate_false_positive(p_A, threshold, simulations, samples, n):
+    """
+    Vectorized simulation to estimate the false positive rate.
+    """
     alpha_prior, beta_prior = 1, 1
-    false_positives = 0
+    rng = np.random.default_rng(seed=42)
 
-    for _ in range(simulations):
-        conv_A = rng.binomial(n, p_A)
-        conv_B = rng.binomial(n, p_A)  # No true uplift
+    # Simulate all tests at once (no loop)
+    # Both variants use the same true conversion rate, p_A
+    conv_A = rng.binomial(n, p_A, size=simulations)
+    conv_B = rng.binomial(n, p_A, size=simulations)
 
-        post_A = beta(alpha_prior + conv_A, beta_prior + n - conv_A)
-        post_B = beta(alpha_prior + conv_B, beta_prior + n - conv_B)
+    # Calculate posteriors for all simulations
+    alpha_post_A = alpha_prior + conv_A
+    beta_post_A = beta_prior + n - conv_A
+    alpha_post_B = alpha_prior + conv_B
+    beta_post_B = beta_prior + n - conv_B
 
-        samples_A = post_A.rvs(samples, random_state=rng)
-        samples_B = post_B.rvs(samples, random_state=rng)
+    # Draw samples from all posterior distributions
+    samples_A = beta.rvs(alpha_post_A, beta_post_A, size=(samples, simulations), random_state=rng)
+    samples_B = beta.rvs(alpha_post_B, beta_post_B, size=(samples, simulations), random_state=rng)
 
-        if np.mean(samples_B > samples_A) > threshold:
-            false_positives += 1
+    # Calculate P(B > A) for each simulation
+    prob_B_better = np.mean(samples_B > samples_A, axis=0)
 
-    return false_positives / simulations
+    # The false positive rate is the proportion of simulations that incorrectly found a winner
+    false_positive_rate = np.mean(prob_B_better > threshold)
+    
+    return false_positive_rate
 
-# --- Run Simulation ---
-fp_rate = simulate_false_positive(p_A, thresh, simulations, samples, n)
+# 2. Page Title and Introduction
+st.title("🚨 False Positive Simulator")
+st.markdown(
+    "This tool helps you validate your decision rules by simulating the false positive rate of your test setup when there is **no real difference** between the variants."
+)
 
-# --- Output ---
-st.title("Bayesian False Positive Rate Estimator")
+# 3. Sidebar for All User Inputs
+with st.sidebar:
+    st.header("Simulation Parameters")
+    
+    p_A = st.number_input(
+        "Baseline conversion rate (p_A)", 
+        min_value=0.001, max_value=0.99, value=0.05, step=0.001, format="%.3f", 
+        help="The true conversion rate for both variants in this A/A test simulation."
+    )
+    thresh = st.slider(
+        "Decision Threshold", 0.80, 0.99, 0.95, step=0.01,
+        help="The P(B > A) threshold required to declare a winner. 95% is common."
+    )
+    n = st.number_input(
+        "Sample Size per Variant", min_value=100, value=10000, step=100,
+        help="The number of users that will be tested in each variant."
+    )
+    
+    st.subheader("Simulation Quality")
+    simulations = st.slider(
+        "Number of A/A Tests to Simulate", 100, 5000, 1000, step=100,
+        help="More simulations provide a more accurate estimate but are slower."
+    )
+    samples = st.slider(
+        "Posterior Samples", 500, 5000, 1000, step=500,
+        help="Samples drawn from each posterior. Default is usually sufficient."
+    )
 
-st.markdown("""
-This app estimates the **false positive rate** of a Bayesian A/B test given:
-- No true difference between variants (A = B)
-- A posterior decision threshold (e.g., P(B > A) > 0.95)
+    st.markdown("---")
+    run_button = st.button("Run Simulation", type="primary", use_container_width=True)
 
-You can adjust all parameters in the sidebar.
-""")
+# 4. Main Page for Displaying Outputs
+st.markdown("---")
 
-st.write(f"**Baseline Conversion Rate:** {p_A:.2%}")
-st.write(f"**Posterior Threshold:** {thresh:.2f}")
-st.write(f"**Sample Size per Variant:** {n}")
-st.write(f"**Estimated False Positive Rate:** {fp_rate:.2%}")
+if run_button:
+    with st.spinner("Running A/A test simulations..."):
+        fp_rate = simulate_false_positive(p_A, thresh, simulations, samples, n)
 
-# --- Visual Aid ---
-fig, ax = plt.subplots(figsize=(6, 3))
-ax.bar(["False Positive Rate"], [fp_rate], color='salmon')
-ax.axhline(0.05, color='red', linestyle='--', label='5% Threshold')
-ax.set_ylim(0, max(fp_rate + 0.02, 0.1))
-ax.set_ylabel("Rate")
-ax.set_title("Estimated False Positive Rate")
-ax.legend()
-st.pyplot(fig)
+        st.subheader("Simulation Results")
+        st.metric(
+            label="Estimated False Positive Rate",
+            value=f"{fp_rate:.2%}",
+            help="The percentage of simulated A/A tests that incorrectly declared a winner based on your threshold."
+        )
+
+        if fp_rate > 0.05:
+            st.warning("Your threshold may be too lenient, leading to more false positives than typically accepted (5%).")
+        else:
+            st.success("Your decision threshold appears to be well-calibrated, keeping false positives low.")
+
+        st.subheader("Visualization")
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.bar(["False Positive Rate"], [fp_rate], color='salmon', width=0.4, label="Simulated Rate")
+        ax.axhline(0.05, color='red', linestyle='--', label='Typical 5% Risk Level')
+        ax.set_ylim(0, max(fp_rate * 2, 0.1))
+        ax.set_ylabel("Rate")
+        ax.set_title("Estimated False Positive Rate vs. 5% Threshold")
+        ax.yaxis.set_major_formatter(plt.FuncFormatter('{:.1%}'.format))
+        ax.legend()
+        st.pyplot(fig)
+else:
+    st.info("Adjust the parameters in the sidebar and click 'Run Simulation' to estimate the false positive rate.")
+
+# 5. Explanations Section
+st.markdown("---")
+with st.expander("ℹ️ How to interpret these results"):
+    st.markdown("""
+    #### What is a False Positive?
+    A **false positive** (or Type I error) occurs when you conclude that your variant (B) is better than the control (A), when in reality, there is no difference between them. This simulation estimates how often that would happen with your current settings.
+
+    #### How does this simulation work?
+    It runs hundreds or thousands of simulated A/A tests where both "variants" have the exact same true conversion rate. It then checks what percentage of those tests would have been declared a "winner" based on your decision threshold (e.g., `P(B > A) > 95%`).
+
+    #### Why is this important?
+    This tool helps you understand the risk associated with your decision-making process. A well-calibrated test should have a low false positive rate. The standard in the industry is to accept a rate of **5% or less**. If your estimated rate is higher, it suggests your threshold for declaring a winner might be too low (too lenient), and you risk launching changes that have no real positive effect.
+    """)
