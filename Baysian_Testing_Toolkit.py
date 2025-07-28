@@ -11,7 +11,7 @@ st.title("📊 Bayesian Testing Toolkit")
 
 st.markdown("""
 Welcome to the **Bayesian Testing Toolkit**. This suite of apps is designed to help you plan, interpret, and validate your A/B tests with statistical rigour. 
-Select a tool below to get started.
+Select a tool from the sidebar to get started.
 """)
 
 st.markdown("---")
@@ -35,8 +35,6 @@ with col1:
         "**Note:** Ensure you use **user-level data** for an accurate Sample Ratio Mismatch (SRM) check.",
         icon="🧠"
     )
-    # Use a markdown link for internal navigation
-    st.markdown("#### [Open the Estimator &rarr;](Uplift_Certainty_Estimator)")
 
 
 # --- Card 2: Sample Size Calculator ---
@@ -55,8 +53,6 @@ with col2:
         "**Use when:** You're planning a test and want to ensure it's sufficiently powered to find a result.",
         icon="🧠"
     )
-    # Use a markdown link for internal navigation
-    st.markdown("#### [Open the Calculator &rarr;](Sample_Size_Calculator)")
 
 
 # --- Card 3: False Positive Simulator ---
@@ -75,11 +71,3 @@ with col3:
         "**Use when:** You want to understand the risk of declaring a winner when none exists.",
         icon="🧠"
     )
-    # Use a markdown link for internal navigation
-    st.markdown("#### [Open the Simulator &rarr;](False_Positive_Simulator)")
-
-# The two lines causing the error have been removed from here.
-
-# Add the call to action back in its own correctly formatted element
-st.markdown("---")
-st.info("👉 **Select a page from the sidebar to get started.**")
