@@ -39,7 +39,7 @@ with col1:
 
 # --- Card 2: Sample Size Calculator ---
 with col2:
-    st.subheader("2. ⚙️ Pre-Test Power Calculator")
+    st.subheader("2. ⚙️ Pre-Test Calculator")
     st.markdown(
         "Plan your A/B test by estimating the sample size needed to detect a specific uplift."
     )
