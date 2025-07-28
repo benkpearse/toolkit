@@ -77,6 +77,9 @@ with col3:
     )
     # Use a markdown link for internal navigation
     st.markdown("#### [Open the Simulator &rarr;](False_Positive_Simulator)")
-    Select a page from the **sidebar** to get started.
 
-""")
+# The two lines causing the error have been removed from here.
+
+# Add the call to action back in its own correctly formatted element
+st.markdown("---")
+st.info("👉 **Select a page from the sidebar to get started.**")
