@@ -86,7 +86,7 @@ def simulate_mde(p_A, thresh, desired_power, simulations, samples, alpha_prior, 
     return results
 
 # 2. Page Title and Introduction
-st.title("⚙️ Pre-Test Power Calculator")
+st.title("⚙️ Pre-Test Calculator")
 st.markdown(
     "This tool helps you plan an A/B test by estimating the sample size required or the minimum effect you can detect."
 )
