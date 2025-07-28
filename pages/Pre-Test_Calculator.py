@@ -86,7 +86,7 @@ def simulate_mde(p_A, thresh, desired_power, simulations, samples, alpha_prior, 
     return results
 
 # 2. Page Title and Introduction
-st.title("⚙️ Pre-Test Calculator")
+st.title("⚙️ Pre-Test Power Calculator")
 st.markdown(
     "This tool helps you plan an A/B test by estimating the sample size required or the minimum effect you can detect."
 )
@@ -135,31 +135,48 @@ with st.sidebar:
             help="Fixed sample size used to determine the minimum detectable uplift."
         )
 
+    # --- UPDATED PRIOR BELIEFS SECTION ---
     st.subheader("Optional Prior Beliefs")
     use_auto_prior = st.checkbox(
-        "Auto-calculate priors from historical data",
-        help="Check this to calculate priors based on a past conversion rate and sample size."
+        "Calculate priors from historical data",
+        help="Check this to calculate priors based on past conversions and sample size."
     )
     if use_auto_prior:
-        hist_cr = st.number_input(
-            "Historical conversion rate (0.05 = 5%)", min_value=0.0, max_value=1.0, value=0.05, step=0.001,
-            format="%.3f",
-            help="Observed conversion rate from your historical data."
+        hist_conv = st.number_input(
+            "Historical Conversions (Successes)",
+            min_value=0,
+            value=50,
+            step=1,
+            help="The raw number of conversions or successes from your historical data."
         )
         hist_n = st.number_input(
-            "Historical sample size", min_value=1, value=1000, step=1,
-            help="Number of observations (users) in historical data."
+            "Historical Total Sample Size (Users)",
+            min_value=1,
+            value=1000,
+            step=1,
+            help="The total number of users or observations in your historical data."
         )
-        alpha_prior = hist_cr * hist_n
-        beta_prior = (1 - hist_cr) * hist_n
+        if hist_conv > hist_n:
+            st.error("Historical conversions cannot exceed the total sample size.")
+            st.stop()
+        
+        # New calculation based on raw values
+        alpha_prior = hist_conv
+        beta_prior = hist_n - hist_conv
     else:
         alpha_prior = st.number_input(
-            "Alpha (prior successes)", min_value=0.0, value=1.0, step=0.1,
-            help="Prior belief in successes before the test."
+            "Alpha (prior successes)",
+            min_value=0.0,
+            value=1.0,
+            step=0.1,
+            help="Manually set your prior belief in successes."
         )
         beta_prior = st.number_input(
-            "Beta (prior failures)", min_value=0.0, value=1.0, step=0.1,
-            help="Prior belief in failures before the test."
+            "Beta (prior failures)",
+            min_value=0.0,
+            value=1.0,
+            step=0.1,
+            help="Manually set your prior belief in failures."
         )
 
     st.markdown("---")
