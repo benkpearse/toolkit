@@ -77,6 +77,6 @@ with col3:
     )
     # Use a markdown link for internal navigation
     st.markdown("#### [Open the Simulator &rarr;](False_Positive_Simulator)")
-👉 Select a page from the **sidebar** to get started.
+    Select a page from the **sidebar** to get started.
 
 """)
