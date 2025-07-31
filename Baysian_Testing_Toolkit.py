@@ -71,3 +71,20 @@ with col3:
         "**Use when:** You want to understand the risk of declaring a winner when none exists.",
         icon="🧠"
     )
+
+# --- Card 4: SRM Calculator (NEW) ---
+with row2_col2:
+    st.subheader("4. ⚖️ SRM Calculator")
+    st.markdown(
+        "Check for imbalances in your test's traffic allocation that could invalidate results."
+    )
+    st.markdown(
+        """
+        - **Input:** Observed users and expected split for each variant.
+        - **Output:** A p-value and conclusion on whether an SRM is detected.
+        """
+    )
+    st.info(
+        "**Use when:** You need to validate data integrity before trusting your test results.",
+        icon="🧠"
+    )
