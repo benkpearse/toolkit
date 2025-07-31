@@ -16,11 +16,12 @@ Select a tool from the sidebar to get started.
 
 st.markdown("---")
 
-# Create columns for the tool cards
-col1, col2, col3 = st.columns(3)
+# Create a 2x2 grid for the tool cards
+row1_col1, row1_col2 = st.columns(2, gap="large")
+row2_col1, row2_col2 = st.columns(2, gap="large")
 
 # --- Card 1: Uplift Certainty Estimator ---
-with col1:
+with row1_col1:
     st.subheader("1. 📈 Uplift Certainty Estimator")
     st.markdown(
         "Interpret completed A/B test results to make a confident ship/no-ship decision."
@@ -36,9 +37,8 @@ with col1:
         icon="🧠"
     )
 
-
-# --- Card 2: Sample Size Calculator ---
-with col2:
+# --- Card 2: Pre-Test Calculator ---
+with row1_col2:
     st.subheader("2. ⚙️ Pre-Test Calculator")
     st.markdown(
         "Plan your A/B test by estimating the sample size needed to detect a specific uplift."
@@ -54,9 +54,8 @@ with col2:
         icon="🧠"
     )
 
-
 # --- Card 3: False Positive Simulator ---
-with col3:
+with row2_col1:
     st.subheader("3. 🚨 False Positive Simulator")
     st.markdown(
         "Validate your decision rules by simulating the false positive rate under an A/A scenario."
