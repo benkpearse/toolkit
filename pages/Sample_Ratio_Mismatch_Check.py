@@ -25,54 +25,59 @@ with st.sidebar:
 
     num_variants = st.number_input(
         "Number of Variants (including control)",
-        min_value=2,
-        max_value=10,
-        value=2,
-        step=1
+        min_value=2, max_value=10, value=2, step=1
     )
 
     st.subheader("Traffic Allocation")
+    
+    split_mode = st.radio(
+        "Expected Traffic Split",
+        ["Assume Equal Split", "Enter Custom Split"],
+        horizontal=True,
+        help="Choose 'Equal' for a standard test or 'Custom' for uneven splits (e.g., 90/10)."
+    )
+
     observed_counts = []
     expected_split = []
 
-    # Create columns for a cleaner layout in the sidebar
-    col1, col2 = st.columns(2)
-
-    for i in range(num_variants):
-        variant_name = f"Variant {chr(65 + i)}" # A, B, C...
-        with col1:
+    if split_mode == "Assume Equal Split":
+        st.caption("Enter the observed user counts for each variant.")
+        for i in range(num_variants):
+            variant_name = f"Variant {chr(65 + i)}"
             observed = st.number_input(
                 f"Users in {variant_name}",
-                min_value=0,
-                value=10000,
-                step=1,
-                key=f"obs_{i}"
+                min_value=0, value=10000, step=1, key=f"obs_{i}"
             )
             observed_counts.append(observed)
-        with col2:
-            split = st.number_input(
-                f"Split % for {variant_name}",
-                min_value=0.0,
-                max_value=100.0,
-                value=round(100/num_variants, 1),
-                step=0.1,
-                key=f"split_{i}"
-            )
-            expected_split.append(split)
+        # Automatically create the equal split
+        expected_split = [100.0 / num_variants] * num_variants
 
-    # Validate that the splits add up to 100%
-    total_split = sum(expected_split)
-    if not np.isclose(total_split, 100.0):
-        st.warning(f"Total split must be 100%. Current total: {total_split:.1f}%")
+    else: # Custom Split
+        st.caption("Enter observed counts and the expected split percentage for each variant.")
+        col1, col2 = st.columns(2)
+        for i in range(num_variants):
+            variant_name = f"Variant {chr(65 + i)}"
+            with col1:
+                observed = st.number_input(
+                    f"Users in {variant_name}",
+                    min_value=0, value=10000, step=1, key=f"obs_{i}"
+                )
+                observed_counts.append(observed)
+            with col2:
+                split = st.number_input(
+                    f"Split %",
+                    min_value=0.0, max_value=100.0, value=round(100/num_variants, 1), step=0.1, key=f"split_{i}"
+                )
+                expected_split.append(split)
+        
+        total_split = sum(expected_split)
+        if not np.isclose(total_split, 100.0):
+            st.warning(f"Total split must be 100%. Current total: {total_split:.1f}%")
 
     st.subheader("Settings")
     significance_level = st.slider(
         "Significance Level (α)",
-        min_value=0.01,
-        max_value=0.10,
-        value=0.01,
-        step=0.01,
-        format="%.2f",
+        min_value=0.01, max_value=0.10, value=0.01, step=0.01, format="%.2f",
         help="The p-value threshold for detecting an SRM. 0.01 is a common, strict choice."
     )
     
@@ -84,15 +89,14 @@ st.markdown("---")
 
 if run_button:
     # Final validation before running calculation
-    if not np.isclose(total_split, 100.0):
-        st.error("Cannot run calculation. Please ensure the total expected split adds up to 100%.")
+    if split_mode == "Enter Custom Split" and not np.isclose(sum(expected_split), 100.0):
+        st.error("Cannot run calculation. Please ensure the total custom split adds up to 100%.")
     elif sum(observed_counts) == 0:
         st.error("Cannot run calculation. Please enter the observed user counts.")
     else:
         with st.spinner("Calculating..."):
             total_users = sum(observed_counts)
             
-            # Prepare data for display and calculation
             expected_split_decimal = [s / 100.0 for s in expected_split]
             expected_counts = [s * total_users for s in expected_split_decimal]
 
@@ -107,7 +111,6 @@ if run_button:
             st.subheader("Summary")
             st.dataframe(summary_df)
 
-            # Perform Chi-square test
             chi2_stat, p_value = chisquare(f_obs=observed_counts, f_exp=expected_counts)
 
             st.subheader("Results")
@@ -125,7 +128,6 @@ if run_button:
                     f"✅ **No SRM Detected.** The p-value ({p_value:.4f}) is greater than your significance level ({significance_level}). "
                     "The observed traffic split is consistent with your expectations."
                 )
-
 else:
     st.info("Adjust the parameters in the sidebar and click 'Check for SRM'.")
 
